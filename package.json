@@ -1,0 +1,17 @@
+{
+  "name": "rj-thrift-hub",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev --workspace backend\" \"npm run dev --workspace client\"",
+    "seed": "npm run seed --workspace backend",
+    "test": "npm run test --workspace backend",
+    "build": "npm run build --workspace client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

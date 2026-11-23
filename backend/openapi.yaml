@@ -1,0 +1,133 @@
+openapi: 3.0.3
+info:
+  title: RJ Thrift Hub Payments and AI API
+  version: 1.0.0
+  description: Express endpoints for Maya Checkout, payment reconciliation, and AI discovery. Supabase serves authentication and application data directly to the client under RLS.
+servers:
+  - url: http://localhost:4000/api/v1
+tags:
+  - name: Health
+  - name: Checkout
+  - name: Payments
+  - name: AI
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Supabase access token
+  schemas:
+    Success:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data: { type: object, additionalProperties: true }
+    Error:
+      type: object
+      required: [success, error, requestId]
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+        requestId: { type: string, format: uuid }
+    ShippingAddress:
+      type: object
+      required: [recipient, phone, address, city, postalCode]
+      properties:
+        recipient: { type: string, minLength: 2, maxLength: 100 }
+        phone: { type: string, minLength: 7, maxLength: 30 }
+        address: { type: string, minLength: 5, maxLength: 300 }
+        city: { type: string, minLength: 2, maxLength: 100 }
+        postalCode: { type: string, minLength: 3, maxLength: 16 }
+    CheckoutRequest:
+      type: object
+      required: [idempotencyKey, shippingAddress]
+      properties:
+        idempotencyKey: { type: string, minLength: 8, maxLength: 100 }
+        couponCode: { type: string, maxLength: 40 }
+        shippingAddress: { $ref: '#/components/schemas/ShippingAddress' }
+    AiRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 3, maxLength: 500 }
+paths:
+  /health:
+    get:
+      tags: [Health]
+      responses:
+        '200':
+          description: API is running
+  /checkout:
+    post:
+      tags: [Checkout]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '201':
+          description: Maya Checkout session created
+        '401':
+          description: Supabase session is missing or invalid
+        '409':
+          description: An item is unavailable
+  /orders/{id}/verify-payment:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Payment status reconciled with Maya
+        '401':
+          description: Supabase session is missing or invalid
+        '404':
+          description: Order not found
+  /webhooks/maya:
+    post:
+      tags: [Payments]
+      description: Maya's signed webhook endpoint. Configure the public API URL ending in `/api/v1/webhooks/maya` in Maya Manager.
+      parameters:
+        - name: x-maya-webhook-signature
+          in: header
+          required: true
+          schema: { type: string }
+        - name: x-maya-webhook-timestamp
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Event accepted or already processed
+        '401':
+          description: Webhook signature or timestamp is invalid
+  /ai/discover:
+    post:
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiRequest' }
+      responses:
+        '200':
+          description: Matching products from the active Supabase catalog
+        '503':
+          description: Gemini discovery is unavailable
