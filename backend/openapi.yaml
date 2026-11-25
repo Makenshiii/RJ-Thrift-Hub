@@ -1,0 +1,598 @@
+openapi: 3.0.3
+info:
+  title: RJ Thrift Hub API
+  version: 1.0.0
+  description: Express REST API for Supabase authentication, public products, customer carts and orders, protected admin operations, Maya Checkout, payment reconciliation, and AI discovery. Supabase credentials and database access remain server-side.
+servers:
+  - url: http://localhost:4000/api/v1
+tags:
+  - name: Authentication
+  - name: Products
+  - name: Cart
+  - name: Orders
+  - name: Admin
+  - name: Health
+  - name: Checkout
+  - name: Payments
+  - name: AI
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Supabase access token
+  schemas:
+    Success:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data: { type: object, additionalProperties: true }
+    Error:
+      type: object
+      required: [success, error, requestId]
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+        requestId: { type: string, format: uuid }
+    ShippingAddress:
+      type: object
+      required: [recipient, phone, address, city, postalCode]
+      properties:
+        recipient: { type: string, minLength: 2, maxLength: 100 }
+        phone: { type: string, minLength: 7, maxLength: 30 }
+        address: { type: string, minLength: 5, maxLength: 300 }
+        city: { type: string, minLength: 2, maxLength: 100 }
+        postalCode: { type: string, minLength: 3, maxLength: 16 }
+    CheckoutRequest:
+      type: object
+      required: [idempotencyKey, shippingAddress]
+      properties:
+        idempotencyKey: { type: string, minLength: 8, maxLength: 100 }
+        couponCode: { type: string, maxLength: 40 }
+        shippingAddress: { $ref: '#/components/schemas/ShippingAddress' }
+    AiRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 3, maxLength: 200 }
+    AiInterpretation:
+      type: object
+      required: [keywords, category, minPrice, maxPrice, size, sort]
+      properties:
+        keywords: { type: array, maxItems: 6, items: { type: string } }
+        category: { type: string, nullable: true }
+        minPrice: { type: integer, nullable: true, minimum: 0 }
+        maxPrice: { type: integer, nullable: true, minimum: 0 }
+        size: { type: string, nullable: true }
+        sort: { type: string, enum: [newest, price, '-price'] }
+    AiDiscoveryProduct:
+      type: object
+      required: [id, name, price, image, category, condition, sizes, size_stock, availableSizes, stock]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        price: { type: integer, minimum: 0 }
+        image: { type: string }
+        category: { type: string }
+        condition: { type: string }
+        size: { type: string }
+        sizes: { type: array, items: { type: string } }
+        size_stock: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+        availableSizes:
+          type: array
+          items:
+            type: object
+            required: [size, quantity]
+            properties:
+              size: { type: string }
+              quantity: { type: integer, minimum: 1 }
+        stock: { type: integer, minimum: 1 }
+        aiNote: { type: string, maxLength: 140 }
+    AiDiscoveryResponse:
+      type: object
+      required: [aiAssisted, interpretation, products, meta]
+      properties:
+        aiAssisted: { type: boolean, enum: [true] }
+        interpretation: { $ref: '#/components/schemas/AiInterpretation' }
+        products:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/AiDiscoveryProduct' }
+        meta:
+          type: object
+          required: [count]
+          properties:
+            count: { type: integer, minimum: 0, maximum: 12 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 72 }
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72 }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    CartItemRequest:
+      type: object
+      required: [productId]
+      properties:
+        productId: { type: string, format: uuid }
+        size: { type: string, maxLength: 30 }
+        quantity: { type: integer, minimum: 1, maximum: 9999 }
+    CartQuantityRequest:
+      type: object
+      required: [size, quantity]
+      properties:
+        size: { type: string, minLength: 1, maxLength: 30 }
+        quantity: { type: integer, minimum: 1, maximum: 9999 }
+    InventoryUpdate:
+      type: object
+      required: [price, sizes, sizeStock]
+      properties:
+        price: { type: integer, minimum: 0 }
+        sizes: { type: array, minItems: 1, maxItems: 30, items: { type: string } }
+        sizeStock: { type: object, additionalProperties: { type: integer, minimum: 0, maximum: 9999 } }
+    Product:
+      type: object
+      required: [name, description, category, price, image, size, condition, stock]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        description: { type: string, minLength: 5, maxLength: 2000 }
+        category: { type: string, minLength: 2, maxLength: 60 }
+        price: { type: integer, minimum: 0 }
+        image: { type: string, format: uri }
+        size: { type: string, minLength: 1, maxLength: 30 }
+        sizes: { type: array, minItems: 1, maxItems: 30, items: { type: string } }
+        size_stock: { type: object, additionalProperties: { type: integer, minimum: 0, maximum: 9999 } }
+        condition: { type: string, enum: ['Like new', 'Very good', 'Good', 'Fair'] }
+        tag: { type: string, maxLength: 40 }
+        stock: { type: integer, minimum: 0, maximum: 9999 }
+paths:
+  /health:
+    get:
+      tags: [Health]
+      responses:
+        '200':
+          description: API is running
+  /auth/register:
+    post:
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created, with a session or email-confirmation requirement
+        '422':
+          description: Invalid registration fields
+  /auth/login:
+    post:
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated user session
+        '401':
+          description: Invalid credentials
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Refreshed session
+        '401':
+          description: Invalid or expired refresh token
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Session revoked
+        '401':
+          description: Supabase session is missing or invalid
+  /auth/me:
+    get:
+      tags: [Authentication]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Authenticated profile
+        '401':
+          description: Supabase session is missing or invalid
+  /products:
+    get:
+      tags: [Products]
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: category, in: query, schema: { type: string, maxLength: 60 } }
+        - { name: minPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, price, '-price'] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+      responses:
+        '200':
+          description: Public active catalog results
+  /products/{id}:
+    get:
+      tags: [Products]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Active product
+        '404':
+          description: Product not found
+  /cart:
+    get:
+      tags: [Cart]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user's cart
+        '401':
+          description: Supabase session is missing or invalid
+  /cart/items:
+    post:
+      tags: [Cart]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CartItemRequest' }
+      responses:
+        '201':
+          description: Updated cart
+        '409':
+          description: Requested size or quantity is unavailable
+  /cart/items/{id}:
+    patch:
+      tags: [Cart]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CartQuantityRequest' }
+      responses:
+        '200':
+          description: Updated cart
+        '409':
+          description: Requested size or quantity is unavailable
+    delete:
+      tags: [Cart]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: size, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Updated cart
+  /checkout/quote:
+    post:
+      tags: [Checkout]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                couponCode: { type: string, maxLength: 40 }
+      responses:
+        '200':
+          description: Server-calculated cart totals and coupon result
+        '422':
+          description: Cart or coupon is invalid
+  /checkout:
+    post:
+      tags: [Checkout]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100 }
+      responses:
+        '201':
+          description: Maya Checkout session created
+        '401':
+          description: Supabase session is missing or invalid
+        '409':
+          description: An item is unavailable
+  /orders:
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200':
+          description: Current user's paginated order history
+  /orders/{id}:
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Current user's order and items
+        '404':
+          description: Order not found
+  /orders/{id}/cancel:
+    post:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Cancelled unpaid order
+        '409':
+          description: Order is not cancellable
+  /orders/{id}/verify-payment:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Payment status reconciled with Maya
+        '401':
+          description: Supabase session is missing or invalid
+  /orders/{id}/retry-payment:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Existing Maya session returned or a missing session created for a pending order
+        '401':
+          description: Supabase session is missing or invalid
+        '409':
+          description: Order is not payable, its reservation expired, or another session is being prepared
+        '404':
+          description: Order not found
+  /webhooks/maya:
+    post:
+      tags: [Payments]
+      description: Maya's signed webhook endpoint. Configure the public API URL ending in `/api/v1/webhooks/maya` in Maya Manager.
+      parameters:
+        - name: x-maya-webhook-signature
+          in: header
+          required: true
+          schema: { type: string }
+        - name: x-maya-webhook-timestamp
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Event accepted or already processed
+        '401':
+          description: Webhook signature or timestamp is invalid
+  /ai/discover:
+    post:
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiRequest' }
+      responses:
+        '200':
+          description: Interpreted filters and database-verified active product results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AiDiscoveryResponse' }
+        '400':
+          description: Search query is not 3-200 characters after normalization
+        '429':
+          description: AI search rate limit exceeded
+        '503':
+          description: AI search is temporarily unavailable
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Authorized store dashboard statistics
+        '403':
+          description: Administrator access required
+  /admin/products:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Catalog management list
+        '403':
+          description: Administrator access required
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '201':
+          description: Product created
+        '403':
+          description: Administrator access required
+  /admin/products/{id}:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Product updated
+        '403':
+          description: Administrator access required
+  /admin/products/{id}/inventory:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryUpdate' }
+      responses:
+        '200':
+          description: Product price and size-level stock updated
+        '409':
+          description: Product has an active inventory reservation
+  /admin/orders:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Orders with customer profile information
+  /admin/orders/{id}/status:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [processing, shipped, delivered] }
+      responses:
+        '200':
+          description: Order status updated
+        '403':
+          description: Administrator access required
+        '409':
+          description: Status transition is not allowed
+  /admin/coupons:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Coupon administration list
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, type, value, minimumSpend, perCustomerLimit, active]
+              properties:
+                code: { type: string }
+                type: { type: string, enum: [percentage, fixed] }
+                value: { type: number }
+                minimumSpend: { type: integer }
+                expiresAt: { type: string, format: date-time, nullable: true }
+                usageLimit: { type: integer, nullable: true }
+                perCustomerLimit: { type: integer }
+                active: { type: boolean }
+      responses:
+        '201':
+          description: Coupon created
+        '403':
+          description: Administrator access required
+  /admin/coupons/{id}:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active: { type: boolean }
+                expiresAt: { type: string, format: date-time, nullable: true }
+      responses:
+        '200':
+          description: Coupon updated
+        '403':
+          description: Administrator access required
